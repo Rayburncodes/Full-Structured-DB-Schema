@@ -40,71 +40,117 @@ CREATE TRIGGER on_auth_user_created
 
 CREATE TABLE public.exercises (
   exercise_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name            TEXT NOT NULL UNIQUE,
-  type            TEXT NOT NULL CHECK (type IN ('strength','cardio','mobility','plyometric')),
+  exercise_slug   TEXT NOT NULL UNIQUE,
+  display_name    TEXT NOT NULL,
+  category        TEXT NOT NULL CHECK (category IN ('strength','cardio','mobility','plyometric')),
   muscle_groups   TEXT[],                        -- e.g. ARRAY['quads','glutes']
   equipment       TEXT[],
   difficulty      TEXT CHECK (difficulty IN ('beginner','intermediate','advanced')),
   description     TEXT,
+  form_image_url  TEXT,
+  form_video_url  TEXT,
+  form_tips       JSONB NOT NULL DEFAULT '[]'::JSONB,
+  camera_angle_tips JSONB NOT NULL DEFAULT '[]'::JSONB,
   is_active       BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-CREATE INDEX idx_exercises_type ON public.exercises(type);
-CREATE INDEX idx_exercises_name ON public.exercises(name);
+CREATE INDEX idx_exercises_category     ON public.exercises(category);
+CREATE INDEX idx_exercises_display_name ON public.exercises(display_name);
+CREATE INDEX idx_exercises_slug         ON public.exercises(exercise_slug);
 
 -- Seed some starter exercises
-INSERT INTO public.exercises (name, type, muscle_groups, equipment, difficulty) VALUES
-  ('Back Squat',       'strength',  ARRAY['quads','glutes','hamstrings'], ARRAY['barbell','rack'], 'intermediate'),
-  ('Deadlift',         'strength',  ARRAY['hamstrings','glutes','back'],  ARRAY['barbell'],        'intermediate'),
-  ('Bench Press',      'strength',  ARRAY['chest','triceps','shoulders'], ARRAY['barbell','bench'],'intermediate'),
-  ('Pull-Up',          'strength',  ARRAY['lats','biceps'],               ARRAY['pull-up bar'],    'intermediate'),
-  ('Overhead Press',   'strength',  ARRAY['shoulders','triceps'],         ARRAY['barbell'],        'intermediate'),
-  ('Romanian Deadlift','strength',  ARRAY['hamstrings','glutes'],         ARRAY['barbell'],        'beginner'),
-  ('Goblet Squat',     'strength',  ARRAY['quads','glutes'],              ARRAY['kettlebell'],     'beginner'),
-  ('Hip Thrust',       'strength',  ARRAY['glutes'],                      ARRAY['barbell','bench'],'beginner');
+INSERT INTO public.exercises (exercise_slug, display_name, category, muscle_groups, equipment, difficulty) VALUES
+  ('back-squat',        'Back Squat',        'strength',  ARRAY['quads','glutes','hamstrings'], ARRAY['barbell','rack'],  'intermediate'),
+  ('deadlift',          'Deadlift',          'strength',  ARRAY['hamstrings','glutes','back'],  ARRAY['barbell'],         'intermediate'),
+  ('bench-press',       'Bench Press',       'strength',  ARRAY['chest','triceps','shoulders'], ARRAY['barbell','bench'], 'intermediate'),
+  ('pull-up',           'Pull-Up',           'strength',  ARRAY['lats','biceps'],               ARRAY['pull-up bar'],     'intermediate'),
+  ('overhead-press',    'Overhead Press',    'strength',  ARRAY['shoulders','triceps'],         ARRAY['barbell'],         'intermediate'),
+  ('romanian-deadlift', 'Romanian Deadlift', 'strength',  ARRAY['hamstrings','glutes'],         ARRAY['barbell'],         'beginner'),
+  ('goblet-squat',      'Goblet Squat',      'strength',  ARRAY['quads','glutes'],              ARRAY['kettlebell'],      'beginner'),
+  ('hip-thrust',        'Hip Thrust',        'strength',  ARRAY['glutes'],                      ARRAY['barbell','bench'], 'beginner');
 
 -- ── 3. FORM ANALYSES ─────────────────────────────────────────
 
 CREATE TABLE public.form_analyses (
-  session_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  analysis_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   exercise_id       UUID NOT NULL REFERENCES public.exercises(exercise_id),
-  weight_kg         NUMERIC(6,2),               -- nullable: bodyweight moves
-  reps              SMALLINT,
-  sets              SMALLINT,
+  weight_value      DOUBLE PRECISION,
+  weight_unit       TEXT NOT NULL CHECK (weight_unit IN ('kg','lb')),
+  weight_kg_normalised NUMERIC(6,4) NOT NULL,
+  session_id        UUID NOT NULL,              -- browser session identifier (not the PK)
+  quality_gate_status TEXT CHECK (quality_gate_status IN ('GOOD','ACCEPTABLE')),
+  video_score       NUMERIC(4,3) CHECK (video_score BETWEEN 0 AND 1),
+  annotated_frame_url TEXT,
   video_url         TEXT NOT NULL,               -- Supabase Storage object path
   video_duration_s  SMALLINT,
-  status            TEXT NOT NULL DEFAULT 'pending'
-                      CHECK (status IN ('pending','processing','completed','failed')),
+  status            TEXT NOT NULL DEFAULT 'uploaded'
+                      CHECK (status IN ('uploaded','processing','complete','failed')),
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_form_analyses_user_id        ON public.form_analyses(user_id);
-CREATE INDEX idx_form_analyses_exercise_id    ON public.form_analyses(exercise_id);
-CREATE INDEX idx_form_analyses_status         ON public.form_analyses(status);
-CREATE INDEX idx_form_analyses_user_created   ON public.form_analyses(user_id, created_at DESC);
+-- Keep session_id UNIQUE to preserve existing FK/RLS references without changing them.
+CREATE UNIQUE INDEX idx_form_analyses_session_id_unique ON public.form_analyses(session_id);
+
+CREATE INDEX idx_form_analyses_user_id          ON public.form_analyses(user_id);
+CREATE INDEX idx_form_analyses_exercise_id      ON public.form_analyses(exercise_id);
+CREATE INDEX idx_form_analyses_status           ON public.form_analyses(status);
+CREATE INDEX idx_form_analyses_user_created     ON public.form_analyses(user_id, created_at DESC);
 
 -- ── 4. FORM ANALYSIS RESULTS ──────────────────────────────────
 
 CREATE TABLE public.form_analysis_results (
-  result_id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id                  UUID NOT NULL UNIQUE REFERENCES public.form_analyses(session_id) ON DELETE CASCADE,
-  overall_score               NUMERIC(4,1) NOT NULL CHECK (overall_score BETWEEN 0 AND 100),
-  depth_score                 NUMERIC(4,1) CHECK (depth_score BETWEEN 0 AND 100),
-  alignment_score             NUMERIC(4,1) CHECK (alignment_score BETWEEN 0 AND 100),
-  tempo_score                 NUMERIC(4,1) CHECK (tempo_score BETWEEN 0 AND 100),
-  issues                      JSONB DEFAULT '[]'::JSONB,
-    -- [{frame_ts, severity: 'critical'|'warning'|'info', description, cue}]
+  analysis_id                 UUID PRIMARY KEY REFERENCES public.form_analyses(analysis_id) ON DELETE CASCADE,
+
+  -- Kept for existing RLS policy which checks ownership via session_id join.
+  session_id                  UUID NOT NULL REFERENCES public.form_analyses(session_id) ON DELETE CASCADE,
+
+  user_id                     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  exercise_id                 UUID NOT NULL REFERENCES public.exercises(exercise_id),
+
+  weight_value                DOUBLE PRECISION NOT NULL,
+  weight_unit                 TEXT NOT NULL CHECK (weight_unit IN ('kg','lb')),
+  weight_kg_normalised        NUMERIC(6,4) NOT NULL,
+
+  overall_score               INTEGER NOT NULL CHECK (overall_score BETWEEN 0 AND 100),
+  posture_score               INTEGER NOT NULL CHECK (posture_score BETWEEN 0 AND 100),
+  stability_score             INTEGER NOT NULL CHECK (stability_score BETWEEN 0 AND 100),
+  movement_quality_score      INTEGER NOT NULL CHECK (movement_quality_score BETWEEN 0 AND 100),
+  tempo_score                 INTEGER NOT NULL CHECK (tempo_score BETWEEN 0 AND 100),
+
+  rep_count                   INTEGER NOT NULL,
+  rep_scores                  JSONB NOT NULL DEFAULT '[]'::JSONB,
+
+  issue_tags                  TEXT[],
+  issues_json                 JSONB NOT NULL DEFAULT '[]'::JSONB,
+
   coaching_output             JSONB DEFAULT '{}'::JSONB,
-    -- {summary, cues: [], drills: [], priority_fixes: []}
+  comparison_coaching_output  JSONB,
+
   progression_recommendation  TEXT NOT NULL
-                                CHECK (progression_recommendation IN ('deload','maintain','progress','regress')),
-  annotated_frame_urls        TEXT[],           -- Supabase Storage object paths
-  model_version               TEXT NOT NULL,    -- e.g. 'kinetic-v1.2'
+                                CHECK (progression_recommendation IN ('hold','progress','drop')),
+
+  annotated_frames_urls       JSONB NOT NULL DEFAULT '[]'::JSONB,
+  nemotron_output_url         TEXT NOT NULL,
+  chain_of_thought            TEXT,
+  session_tags                TEXT[],
+
   created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_form_analysis_session_id ON public.form_analysis_results(session_id);
+CREATE INDEX idx_form_analysis_issue_tags_gin ON public.form_analysis_results USING GIN (issue_tags);
+
+-- ── 4b. GOLD STANDARD BIOMECHANICS ────────────────────────────
+
+CREATE TABLE public.gold_standard_biomechanics (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  exercise_id uuid NOT NULL REFERENCES public.exercises(exercise_id),
+  label text NOT NULL,
+  biomechanics_json jsonb NOT NULL,
+  joint_angle_ranges jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 
 -- ── 5. WORKOUT PLAN EXERCISES ─────────────────────────────────
 
