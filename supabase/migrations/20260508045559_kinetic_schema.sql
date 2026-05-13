@@ -63,9 +63,9 @@ INSERT INTO public.exercises (name, type, muscle_groups, equipment, difficulty) 
   ('Goblet Squat',     'strength',  ARRAY['quads','glutes'],              ARRAY['kettlebell'],     'beginner'),
   ('Hip Thrust',       'strength',  ARRAY['glutes'],                      ARRAY['barbell','bench'],'beginner');
 
--- ── 3. FORM SESSIONS ─────────────────────────────────────────
+-- ── 3. FORM ANALYSES ─────────────────────────────────────────
 
-CREATE TABLE public.form_sessions (
+CREATE TABLE public.form_analyses (
   session_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   exercise_id       UUID NOT NULL REFERENCES public.exercises(exercise_id),
@@ -79,16 +79,16 @@ CREATE TABLE public.form_sessions (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_form_sessions_user_id        ON public.form_sessions(user_id);
-CREATE INDEX idx_form_sessions_exercise_id    ON public.form_sessions(exercise_id);
-CREATE INDEX idx_form_sessions_status         ON public.form_sessions(status);
-CREATE INDEX idx_form_sessions_user_created   ON public.form_sessions(user_id, created_at DESC);
+CREATE INDEX idx_form_analyses_user_id        ON public.form_analyses(user_id);
+CREATE INDEX idx_form_analyses_exercise_id    ON public.form_analyses(exercise_id);
+CREATE INDEX idx_form_analyses_status         ON public.form_analyses(status);
+CREATE INDEX idx_form_analyses_user_created   ON public.form_analyses(user_id, created_at DESC);
 
 -- ── 4. FORM ANALYSIS RESULTS ──────────────────────────────────
 
 CREATE TABLE public.form_analysis_results (
   result_id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id                  UUID NOT NULL UNIQUE REFERENCES public.form_sessions(session_id) ON DELETE CASCADE,
+  session_id                  UUID NOT NULL UNIQUE REFERENCES public.form_analyses(session_id) ON DELETE CASCADE,
   overall_score               NUMERIC(4,1) NOT NULL CHECK (overall_score BETWEEN 0 AND 100),
   depth_score                 NUMERIC(4,1) CHECK (depth_score BETWEEN 0 AND 100),
   alignment_score             NUMERIC(4,1) CHECK (alignment_score BETWEEN 0 AND 100),
@@ -132,7 +132,7 @@ CREATE TABLE public.workout_session_logs (
   user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   exercise_id       UUID NOT NULL REFERENCES public.exercises(exercise_id),
   plan_exercise_id  UUID REFERENCES public.workout_plan_exercises(plan_exercise_id),
-  form_session_id   UUID REFERENCES public.form_sessions(session_id),
+  form_session_id   UUID REFERENCES public.form_analyses(session_id),
   logged_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   actual_sets       SMALLINT,
   actual_reps       SMALLINT,
@@ -152,7 +152,7 @@ CREATE INDEX idx_session_logs_form_session_id ON public.workout_session_logs(for
 
 ALTER TABLE public.user_profiles          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exercises              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.form_sessions          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.form_analyses          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.form_analysis_results  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workout_plan_exercises ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workout_session_logs   ENABLE ROW LEVEL SECURITY;
@@ -171,13 +171,13 @@ CREATE POLICY "Exercises are publicly readable"
   ON public.exercises FOR SELECT TO authenticated
   USING (is_active = TRUE);
 
--- form_sessions: users can only see/insert their own
-CREATE POLICY "Users can view own form sessions"
-  ON public.form_sessions FOR SELECT TO authenticated
+-- form_analyses: users can only see/insert their own
+CREATE POLICY "Users can view own form analyses"
+  ON public.form_analyses FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can insert own form sessions"
-  ON public.form_sessions FOR INSERT TO authenticated
+CREATE POLICY "Users can insert own form analyses"
+  ON public.form_analyses FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
 -- form_analysis_results: readable if you own the linked session
@@ -185,9 +185,9 @@ CREATE POLICY "Users can view own analysis results"
   ON public.form_analysis_results FOR SELECT TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM public.form_sessions fs
-      WHERE fs.session_id = form_analysis_results.session_id
-        AND fs.user_id = auth.uid()
+      SELECT 1 FROM public.form_analyses fa
+      WHERE fa.session_id = form_analysis_results.session_id
+        AND fa.user_id = auth.uid()
     )
   );
 
