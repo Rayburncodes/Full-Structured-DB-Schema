@@ -60,14 +60,14 @@ CREATE INDEX idx_exercises_slug         ON public.exercises(exercise_slug);
 
 -- Seed some starter exercises
 INSERT INTO public.exercises (exercise_slug, display_name, category, muscle_groups, equipment, difficulty) VALUES
-  ('back-squat',        'Back Squat',        'strength',  ARRAY['quads','glutes','hamstrings'], ARRAY['barbell','rack'],  'intermediate'),
+  ('back_squat',        'Back Squat',        'strength',  ARRAY['quads','glutes','hamstrings'], ARRAY['barbell','rack'],  'intermediate'),
   ('deadlift',          'Deadlift',          'strength',  ARRAY['hamstrings','glutes','back'],  ARRAY['barbell'],         'intermediate'),
-  ('bench-press',       'Bench Press',       'strength',  ARRAY['chest','triceps','shoulders'], ARRAY['barbell','bench'], 'intermediate'),
-  ('pull-up',           'Pull-Up',           'strength',  ARRAY['lats','biceps'],               ARRAY['pull-up bar'],     'intermediate'),
-  ('overhead-press',    'Overhead Press',    'strength',  ARRAY['shoulders','triceps'],         ARRAY['barbell'],         'intermediate'),
-  ('romanian-deadlift', 'Romanian Deadlift', 'strength',  ARRAY['hamstrings','glutes'],         ARRAY['barbell'],         'beginner'),
-  ('goblet-squat',      'Goblet Squat',      'strength',  ARRAY['quads','glutes'],              ARRAY['kettlebell'],      'beginner'),
-  ('hip-thrust',        'Hip Thrust',        'strength',  ARRAY['glutes'],                      ARRAY['barbell','bench'], 'beginner');
+  ('bench_press',       'Bench Press',       'strength',  ARRAY['chest','triceps','shoulders'], ARRAY['barbell','bench'], 'intermediate'),
+  ('pull_up',           'Pull-Up',           'strength',  ARRAY['lats','biceps'],               ARRAY['pull-up bar'],     'intermediate'),
+  ('overhead_press',    'Overhead Press',    'strength',  ARRAY['shoulders','triceps'],         ARRAY['barbell'],         'intermediate'),
+  ('romanian_deadlift', 'Romanian Deadlift', 'strength',  ARRAY['hamstrings','glutes'],         ARRAY['barbell'],         'beginner'),
+  ('goblet_squat',      'Goblet Squat',      'strength',  ARRAY['quads','glutes'],              ARRAY['kettlebell'],      'beginner'),
+  ('hip_thrust',        'Hip Thrust',        'strength',  ARRAY['glutes'],                      ARRAY['barbell','bench'], 'beginner');
 
 -- ── 3. FORM ANALYSES ─────────────────────────────────────────
 
@@ -124,7 +124,7 @@ CREATE TABLE public.form_analysis_results (
   issue_tags                  TEXT[],
   issues_json                 JSONB NOT NULL DEFAULT '[]'::JSONB,
 
-  coaching_output             JSONB DEFAULT '{}'::JSONB,
+  coaching_output             JSONB,
   comparison_coaching_output  JSONB,
 
   progression_recommendation  TEXT NOT NULL
